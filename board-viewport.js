@@ -84,6 +84,12 @@
       this._pinch = null; this._touchPan = null; this._pointerPan = null;
       return this.state;
     }
+    fitWidth() {
+      const base=this._baseBox(),wr=this.wrapper.getBoundingClientRect();
+      const scale=Math.min(base.width/(this.canvas.width||1600),base.height/(this.canvas.height||1000));
+      if(!(scale>0))return this.state;
+      return this.setZoom((this.wrapper.clientWidth||wr.width)/((this.canvas.width||1600)*scale),{x:wr.left+wr.width/2,y:wr.top});
+    }
     zoomBy(factor) { return Number.isFinite(Number(factor)) && Number(factor) > 0 ? this.setZoom(this.zoom * Number(factor)) : this.state; }
     reset() {
       if (this._inkPointers.size || [...this._touches.values()].some(t => t.ink)) this.config.cancelDrawing?.();
