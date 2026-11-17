@@ -17,7 +17,7 @@
     return{x:p.x,y:p.y,p:clamp(pressure,0,1),tiltX:clamp(finite(p.tiltX,0),-90,90),tiltY:clamp(finite(p.tiltY,0),-90,90),twist:((finite(p.twist,0)%360)+360)%360,t:finite(p.t,0),pressureSupported:p.pressureSupported!==false};
   }
   function createStroke(options={},first){
-    const settings=normalizeSettings(options.settings),stroke={type:'stroke',tool:options.tool||'pen',color:typeof options.color==='string'?options.color:'#243b3a',width:clamp(finite(options.width,4),.1,500),penStyle:settings.style,pressureEnabled:settings.pressure,sensitivity:settings.sensitivity,smoothing:settings.smoothing,points:[copyPoint(first)]};
+    const settings=normalizeSettings(options.settings),stroke={type:'stroke',tool:options.tool||'pen',color:typeof options.color==='string'?options.color:'#243b3a',width:clamp(finite(options.width,4),.1,500),opacity:clamp(finite(options.opacity,1),.1,1),penStyle:settings.style,pressureEnabled:settings.pressure,sensitivity:settings.sensitivity,smoothing:settings.smoothing,points:[copyPoint(first)]};
     live.set(stroke,{lastRaw:copyPoint(first),finished:false});return stroke;
   }
   function compact(stroke){
@@ -46,18 +46,53 @@
   }
   function pressureAt(s,p){return s.pressureEnabled===false?.5:Math.pow(clamp(finite(p.p,.5),0,1),1/clamp(finite(s.sensitivity,1),.25,3));}
   function nib(s,p,angle=0){
-    const pressure=pressureAt(s,p),style=s.penStyle;
-    if(s.tool!=='pen')return{width:s.width,alpha:s.tool==='highlight'?.24:1};
+    const pressure=pressureAt(s,p),style=s.penStyle,opacity=clamp(finite(s.opacity,1),.1,1);
+    if(s.tool!=='pen')return{width:s.width,alpha:(s.tool==='highlight'?.24:1)*opacity};
     let factor=s.pressureEnabled===false?1:.25+1.5*pressure,alpha=1;
     if(style==='fountain')factor=s.pressureEnabled===false?1:.12+1.9*pressure;
     if(style==='pencil'){const tilt=Math.min(85,Math.hypot(finite(p.tiltX,0),finite(p.tiltY,0)))*Math.PI/180;factor=(s.pressureEnabled===false?1:.4+1.1*pressure)*(1+1.7*Math.sin(tilt));alpha=.38+.5*pressure;}
     if(style==='calligraphy'){const twist=finite(p.twist,0),nibAngle=(twist||45)*Math.PI/180;factor*=.25+1.4*Math.abs(Math.sin(angle-nibAngle));}
-    return{width:Math.max(.1,s.width*factor),alpha};
+    return{width:Math.max(.1,s.width*factor),alpha:alpha*opacity};
   }
   function path(ctx,points){
     ctx.moveTo(points[0].x,points[0].y);
     for(let i=0;i<points.length-1;i++){const a=points[i],b=points[i+1];ctx.quadraticCurveTo(a.x,a.y,(a.x+b.x)/2,(a.y+b.y)/2);}
     const end=points[points.length-1];ctx.lineTo(end.x,end.y);
+  }
+  function penSegment(stroke,index){
+    const ps=stroke.points,control=ps[index],previous=ps[index-1],next=ps[index+1];
+    const start=previous?{x:(previous.x+control.x)/2,y:(previous.y+control.y)/2}:{x:control.x,y:control.y};
+    const end=next?{x:(control.x+next.x)/2,y:(control.y+next.y)/2}:{x:control.x,y:control.y};
+    return{start,control,end,ink:nib(stroke,control,Math.atan2(end.y-start.y,end.x-start.x))};
+  }
+  function paintPenRange(ctx,stroke,from,to){
+    for(let i=from;i<to;i++){
+      const segment=penSegment(stroke,i),{start,control,end,ink}=segment;
+      ctx.lineWidth=ink.width;ctx.globalAlpha=ink.alpha;ctx.beginPath();ctx.moveTo(start.x,start.y);ctx.quadraticCurveTo(control.x,control.y,end.x,end.y);ctx.stroke();
+    }
+  }
+  // Indices refer to the exact midpoint quadratics used by draw(), including
+  // its provisional final half-segment. Only that final segment changes when
+  // append() adds points. Highlighters remain one continuous translucent path.
+  function drawRange(ctx,stroke,from=0,to=stroke?.points?.length||0){
+    if(!stroke||stroke.tool!=='pen'||!Object.hasOwn(stroke,'penStyle')||!Array.isArray(stroke.points)||!stroke.points.length)return false;
+    const n=stroke.points.length;from=clamp(Math.floor(finite(from,0)),0,n);to=clamp(Math.floor(finite(to,n)),from,n);if(from===to)return true;
+    ctx.save();try{
+      ctx.strokeStyle=stroke.color;ctx.fillStyle=stroke.color;ctx.lineCap='round';ctx.lineJoin='round';
+      if(n===1){const ink=nib(stroke,stroke.points[0]);ctx.globalAlpha=ink.alpha;ctx.beginPath();ctx.arc(stroke.points[0].x,stroke.points[0].y,ink.width/2,0,2*Math.PI);ctx.fill();}
+      else paintPenRange(ctx,stroke,from,to);
+    }finally{ctx.restore();}return true;
+  }
+  function rangeBounds(stroke,from=0,to=stroke?.points?.length||0){
+    if(!stroke||stroke.tool!=='pen'||!Object.hasOwn(stroke,'penStyle')||!Array.isArray(stroke.points)||!stroke.points.length)return null;
+    const n=stroke.points.length;from=clamp(Math.floor(finite(from,0)),0,n);to=clamp(Math.floor(finite(to,n)),from,n);if(from===to)return null;
+    let xmin=Infinity,ymin=Infinity,xmax=-Infinity,ymax=-Infinity;
+    for(let i=from;i<to;i++){
+      const segment=n===1?{start:stroke.points[0],control:stroke.points[0],end:stroke.points[0],ink:nib(stroke,stroke.points[0])}:penSegment(stroke,i);
+      const pad=segment.ink.width/2+2;
+      for(const p of [segment.start,segment.control,segment.end]){if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(pad))return null;xmin=Math.min(xmin,p.x-pad);ymin=Math.min(ymin,p.y-pad);xmax=Math.max(xmax,p.x+pad);ymax=Math.max(ymax,p.y+pad);}
+    }
+    return{x:xmin,y:ymin,w:xmax-xmin,h:ymax-ymin};
   }
   function draw(ctx,stroke){
     if(!stroke||!Array.isArray(stroke.points)||!stroke.points.length)return;
@@ -65,14 +100,10 @@
       if(!Object.hasOwn(stroke,'penStyle')){legacyDraw(ctx,stroke);return;}
       const ps=stroke.points;ctx.strokeStyle=stroke.tool==='eraser'?'#fff':stroke.color;ctx.fillStyle=ctx.strokeStyle;ctx.lineCap='round';ctx.lineJoin='round';
       if(ps.length===1){const ink=nib(stroke,ps[0]);ctx.globalAlpha=ink.alpha;ctx.beginPath();ctx.arc(ps[0].x,ps[0].y,ink.width/2,0,Math.PI*2);ctx.fill();return;}
-      if(stroke.tool==='highlight'||stroke.tool==='eraser'){ctx.lineWidth=stroke.width;ctx.globalAlpha=stroke.tool==='highlight'?.24:1;ctx.beginPath();path(ctx,ps);ctx.stroke();return;}
+      if(stroke.tool==='highlight'||stroke.tool==='eraser'){ctx.lineWidth=stroke.width;ctx.globalAlpha=(stroke.tool==='highlight'?.24:1)*clamp(finite(stroke.opacity,1),.1,1);ctx.beginPath();path(ctx,ps);ctx.stroke();return;}
       // Each quadratic joins adjacent midpoints. Width follows measured pressure
       // while the same coordinates remain usable by the existing notebook format.
-      let start={x:ps[0].x,y:ps[0].y};
-      for(let i=0;i<ps.length;i++){
-        const control=ps[i],next=ps[i+1],end=next?{x:(control.x+next.x)/2,y:(control.y+next.y)/2}:{x:control.x,y:control.y};
-        const angle=Math.atan2(end.y-start.y,end.x-start.x),ink=nib(stroke,control,angle);ctx.lineWidth=ink.width;ctx.globalAlpha=ink.alpha;ctx.beginPath();ctx.moveTo(start.x,start.y);ctx.quadraticCurveTo(control.x,control.y,end.x,end.y);ctx.stroke();start=end;
-      }
+      paintPenRange(ctx,stroke,0,ps.length);
     }finally{ctx.restore();}
   }
   function recognizeShape(stroke){
@@ -91,5 +122,5 @@
     if(near/ps.length>.92&&edges.every(v=>v>=2)&&length>2*(w+h)*.8&&length<2*(w+h)*1.2)return{type:'rectangle',x:xmin,y:ymin,x2:xmax,y2:ymax,color:stroke.color,width:stroke.width};
     return null;
   }
-  root.PenEngine=Object.freeze({defaults,normalizeSettings,point,createStroke,append,finish,draw,isEraser,isSideButton,recognizeShape,MAX_POINTS});
+  root.PenEngine=Object.freeze({defaults,normalizeSettings,point,createStroke,append,finish,draw,drawRange,rangeBounds,isEraser,isSideButton,recognizeShape,MAX_POINTS});
 })(typeof window!=='undefined'?window:globalThis);

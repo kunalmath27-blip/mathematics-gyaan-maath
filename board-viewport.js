@@ -63,8 +63,8 @@
       this.canvas.style.transform = transform; this.overlay.style.transform = transform;
       if (changed || force) this.config.onChange?.({ zoom, x, y });
     }
-    point(e) {
-      const r = this.canvas.getBoundingClientRect();
+    point(e, rect) {
+      const r = rect || this.canvas.getBoundingClientRect();
       const width = this.canvas.width || 1600, height = this.canvas.height || 1000;
       const scale = Math.min(r.width / width, r.height / height) || 1;
       const ox = (r.width - width * scale) / 2, oy = (r.height - height * scale) / 2;

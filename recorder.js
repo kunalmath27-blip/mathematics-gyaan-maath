@@ -207,9 +207,14 @@
       this._emit();
       this._stopPromise = new Promise((resolve, reject) => { this._stopResolve = resolve; this._stopReject = reject; });
       try {
-        if (this.recorder.state === 'inactive') this._finish();
-        else this.recorder.stop();
+        // A native error may already make the recorder inactive. Its final
+        // dataavailable and stop events are still queued in that order; saving
+        // here would discard the final chunk. Only onstop may finish the blob.
+        if (this.recorder.state !== 'inactive') this.recorder.stop();
       } catch (error) {
+        // The native recorder can become inactive between the state check and
+        // stop(). In that case its queued stop event still completes this save.
+        if (error.name === 'InvalidStateError' && this.recorder?.state === 'inactive') return this._stopPromise;
         this._cleanup();
         this.state = 'idle';
         this._emit();

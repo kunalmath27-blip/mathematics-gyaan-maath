@@ -38,7 +38,7 @@
     get selected() {
       const objects = this.objects;
       if (objects !== this._owner) return [];
-      return this._refs.filter(o => objects.includes(o));
+      return this._refs.filter(o => o.locked !== true && objects.includes(o));
     }
     _notify() { this.config.onSelect?.(this.selected); }
     _refresh() {
@@ -47,7 +47,7 @@
     }
     _select(refs) {
       this._owner = this.objects;
-      this._refs = refs.slice();
+      this._refs = refs.filter(o => o && o.locked !== true);
       this._notify();
     }
     _bounds(object) {
@@ -113,10 +113,11 @@
         g.points.push({ x: p.x, y: p.y });
       } else {
         if (g.refs.some(o => !this.objects.includes(o))) { this.clear(); return; }
+        if (!g.refs.some(o => o.locked !== true)) { this.clear(); return; }
         const { dx, dy } = this._clamped(g.bounds, p.x - g.x, p.y - g.y);
         if (!g.changed && Math.abs(dx) + Math.abs(dy) < 1) return;
         if (!g.changed) { this.config.checkpoint?.(); g.changed = true; }
-        g.refs.forEach((object, i) => this._translate(object, g.snapshots[i], dx, dy));
+        g.refs.forEach((object, i) => { if (object.locked !== true) this._translate(object, g.snapshots[i], dx, dy); });
       }
       this._refresh();
     }
@@ -127,6 +128,7 @@
       if (g.mode === 'lasso') {
         const refs = [];
         if (g.points.length >= 3) for (const object of this.objects) {
+          if (object.locked === true) continue;
           const b = this._bounds(object);
           if (!b) continue;
           let selected = inside({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, g.points);

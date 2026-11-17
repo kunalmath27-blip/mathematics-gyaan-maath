@@ -126,6 +126,8 @@
     for (const object of objects) {
       // Images, PDF pages, graphs, text and geometric objects never enter the
       // ink eraser path. Legacy white eraser strokes remain ordinary ink here.
+      // Locked ink stays intact, including when it sits under unlocked writing.
+      if (object?.locked === true) {next.push(object); continue;}
       if (!hitStroke(object, p, radius)) {next.push(object); continue;}
       if (mode === 'stroke') {changed = true; continue;}
       const result = splitStroke(object, p, radius);

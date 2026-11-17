@@ -82,12 +82,20 @@
         w = Math.max(pad * 2, xmax - xmin + pad * 2);
         h = Math.max(pad * 2, ymax - ymin + pad * 2);
       } else if (object.type === 'text') {
+        if (typeof root.TextTools?.layout === 'function') {
+          try {
+            const measured = root.TextTools.layout(this.context, object)?.bounds;
+            if (measured && [measured.x, measured.y, measured.w, measured.h].every(Number.isFinite) && measured.w >= 0 && measured.h >= 0) {
+              return { x: measured.x, y: measured.y, w: Math.max(1, measured.w), h: Math.max(1, measured.h) };
+            }
+          } catch (_) { /* Standalone/legacy renderer still has a safe fallback. */ }
+        }
         const size = Math.max(1, finite(object.size, 32));
         const lineHeight = Math.max(1, finite(object.lineHeight, size * 1.6));
         const maxWidth = Math.max(1, finite(object.maxWidth, 1400));
         const ctx = this.context;
         ctx.save();
-        ctx.font = (object.italic ? 'italic ' : '') + size + 'px ' + (object.serif ? 'Georgia, serif' : '"Segoe UI", sans-serif');
+        ctx.font = (object.italic ? 'italic ' : '') + (object.bold ? 'bold ' : '') + size + 'px ' + (object.serif ? 'Georgia, serif' : '"Segoe UI", sans-serif');
         let lineCount = 0, measured = 0;
         for (const paragraph of String(object.text || '').split('\n')) {
           let line = '';
@@ -108,6 +116,45 @@
       } else return null;
       return { x, y, w, h };
     }
+    hitTest(p, { includeLocked = false } = {}) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return -1;
+      const tolerance = 6 / Math.max(.05, this._scale()), objects = this.objects;
+      for (let i = objects.length - 1; i >= 0; i--) {
+        if (!includeLocked && objects[i]?.locked) continue;
+        if (this._contains(this.bounds(objects[i]), p, tolerance)) return i;
+      }
+      return -1;
+    }
+    setLocked(locked, index = this.selectedIndex) {
+      const objects = this.objects;
+      if (!Number.isInteger(index) || index < 0 || index >= objects.length) return null;
+      const object = objects[index];
+      locked = !!locked;
+      if (!!object.locked === locked) return object;
+      this._drag = null;
+      this.config.checkpoint?.();
+      object.locked = locked;
+      this._notify(); this.config.render?.(); this.config.save?.(); this.drawOverlay();
+      return object;
+    }
+    toggleLocked(index = this.selectedIndex) {
+      const object = Number.isInteger(index) ? this.objects[index] : null;
+      return object ? this.setLocked(!object.locked, index) : null;
+    }
+    _reorder(index, target) {
+      const objects = this.objects;
+      if (!Number.isInteger(index) || !Number.isInteger(target) || index < 0 || index >= objects.length || target < 0 || target >= objects.length || index === target) return false;
+      this._drag = null;
+      const selected = this.selected;
+      this.config.checkpoint?.();
+      const [object] = objects.splice(index, 1);
+      objects.splice(target, 0, object);
+      if (selected) { this._ref = selected; this._index = objects.indexOf(selected); }
+      this._notify(); this.config.render?.(); this.config.save?.(); this.drawOverlay();
+      return true;
+    }
+    bringToFront(index = this.selectedIndex) { return this._reorder(index, this.objects.length - 1); }
+    sendToBack(index = this.selectedIndex) { return this._reorder(index, 0); }
     _contains(bounds, p, tolerance) {
       return bounds && p.x >= bounds.x - tolerance && p.x <= bounds.x + bounds.w + tolerance &&
         p.y >= bounds.y - tolerance && p.y <= bounds.y + bounds.h + tolerance;
@@ -118,17 +165,13 @@
       const scale = Math.max(.05, this._scale());
       let index = this.selectedIndex, bounds = this.bounds();
       const hitRadius = 24 / scale;
-      let resize = bounds && Math.abs(p.x - bounds.x - bounds.w) <= hitRadius && Math.abs(p.y - bounds.y - bounds.h) <= hitRadius;
+      let resize = !this.selected?.locked && bounds && Math.abs(p.x - bounds.x - bounds.w) <= hitRadius && Math.abs(p.y - bounds.y - bounds.h) <= hitRadius;
       if (!resize) {
-        index = -1;
-        const objects = this.objects;
-        for (let i = objects.length - 1; i >= 0; i--) {
-          if (this._contains(this.bounds(objects[i]), p, 6 / scale)) { index = i; break; }
-        }
+        index = this.hitTest(p);
         this._select(index);
         bounds = this.bounds();
       }
-      if (index < 0 || !bounds || !this.selected) return;
+      if (index < 0 || !bounds || !this.selected || this.selected.locked) return;
       this._drag = { mode: resize ? 'resize' : 'move', x: p.x, y: p.y, snapshot: clone(this.selected), bounds, changed: false, ref: this.selected };
     }
     _translated(object, dx, dy) {
@@ -158,7 +201,13 @@
       const sx = clamp(bounds.w + dx, min, maxW) / bounds.w;
       const sy = clamp(bounds.h + dy, min, maxH) / bounds.h;
       if (BOX_TYPES.has(out.type)) {
-        out.w = bounds.w * sx; out.h = bounds.h * sy;
+        if (out.type === 'image' && out.preserveAspect !== false) {
+          const candidate = Math.abs(sx - 1) > Math.abs(sy - 1) ? sx : sy;
+          const upper = Math.min(maxW / bounds.w, maxH / bounds.h);
+          const lower = Math.min(upper, Math.max(min / bounds.w, min / bounds.h));
+          const factor = clamp(candidate, lower, upper);
+          out.w = bounds.w * factor; out.h = bounds.h * factor;
+        } else { out.w = bounds.w * sx; out.h = bounds.h * sy; }
       } else if (SHAPE_TYPES.has(out.type)) {
         out.x = bounds.x + (finite(object.x) - bounds.x) * sx;
         out.y = bounds.y + (finite(object.y) - bounds.y) * sy;
@@ -173,20 +222,20 @@
       } else if (out.type === 'text') {
         // Text preserves its proportions; changing the layout width would reflow
         // lines instead of performing the scale expected from a resize handle.
-        const factor = clamp(Math.max(sx, sy), .1, 20);
+        const factor = clamp(Math.abs(sx - 1) > Math.abs(sy - 1) ? sx : sy, .1, 20);
         const oldSize = Math.max(1, finite(object.size, 32));
         const newSize = clamp(oldSize * factor, 8, 360), actual = newSize / oldSize;
         out.size = newSize;
         out.maxWidth = Math.max(1, finite(object.maxWidth, 1400) * actual);
         out.lineHeight = Math.max(1, finite(object.lineHeight, oldSize * 1.6) * actual);
-        out.x = bounds.x;
-        out.y = bounds.y + newSize;
+        out.x = bounds.x + (finite(object.x) - bounds.x) * actual;
+        out.y = bounds.y + (finite(object.y) - bounds.y) * actual;
       }
       return out;
     }
     handleMove(event, p) {
       const drag = this._drag;
-      if (!this.enabled || !drag || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || this.selected !== drag.ref) return;
+      if (!this.enabled || !drag || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || this.selected !== drag.ref || this.selected.locked) return;
       const dx = p.x - drag.x, dy = p.y - drag.y;
       if (!drag.changed && Math.abs(dx) + Math.abs(dy) < 1) return;
       const updated = drag.mode === 'resize' ? this._resized(drag.snapshot, drag.bounds, dx, dy) : this._moved(drag.snapshot, drag.bounds, dx, dy);
@@ -211,6 +260,7 @@
       if (bounds.w <= width) dx = clamp(dx, -bounds.x, width - bounds.x - bounds.w);
       if (bounds.h <= height) dy = clamp(dy, -bounds.y, height - bounds.y - bounds.h);
       const copy = this._translated(clone(object), dx, dy);
+      if (copy.locked) copy.locked = false;
       this.config.checkpoint?.();
       const objects = this.objects;
       objects.push(copy);
@@ -220,7 +270,7 @@
     }
     remove() {
       const index = this.selectedIndex;
-      if (index < 0) return false;
+      if (index < 0 || this.selected.locked) return false;
       this.config.checkpoint?.();
       this.objects.splice(index, 1);
       this.clear(); this.config.render?.(); this.config.save?.();
@@ -233,10 +283,11 @@
       if (!this.enabled || !bounds) return;
       const scale = Math.max(.05, this._scale()), pad = 4 / scale, size = 20 / scale;
       ctx.save();
-      ctx.strokeStyle = '#288d79'; ctx.lineWidth = 1.5 / scale;
+      ctx.strokeStyle = this.selected.locked ? '#8a927c' : '#288d79'; ctx.lineWidth = 1.5 / scale;
       ctx.setLineDash([5 / scale, 4 / scale]);
       ctx.strokeRect(bounds.x - pad, bounds.y - pad, bounds.w + pad * 2, bounds.h + pad * 2);
       ctx.setLineDash([]);
+      if (this.selected.locked) { ctx.restore(); return; }
       const hx = bounds.x + bounds.w, hy = bounds.y + bounds.h;
       ctx.fillStyle = '#fff'; ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
       ctx.strokeRect(hx - size / 2, hy - size / 2, size, size);
