@@ -242,7 +242,7 @@ async function offlineSetup(){
  if(!('serviceWorker' in navigator)){$('#offline-ready').textContent='Offline cache unavailable';updateClassroomStatus();return;}
  try{let registration;try{registration=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});if(navigator.onLine)try{await registration.update();}catch{}}catch(e){registration=await navigator.serviceWorker.getRegistration('./');if(!registration)throw e;}
  const worker=registration.installing||registration.waiting;if(worker&&worker.state!=='activated')await new Promise((resolve,reject)=>{const change=()=>{if(worker.state==='activated')resolve();if(worker.state==='redundant')reject(Error('Offline update failed.'));};worker.addEventListener('statechange',change);change();});
- const cache=await caches.open('ganit-studio-v7');const ready=await Promise.all(['./index.html','./app.js?v=7','./pen-engine.js?v=7','./ink-surface.js?v=7','./vendor/pdfjs/pdf.worker.min.mjs'].map(path=>cache.match(path)));$('#offline-ready').textContent=ready.every(Boolean)?'Offline ready':'Offline update downloading…';
+ const cache=await caches.open('ganit-studio-v8');const ready=await Promise.all(['./index.html','./app.js?v=8','./pen-engine.js?v=8','./ink-surface.js?v=8','./vendor/pdfjs/pdf.worker.min.mjs'].map(path=>cache.match(path)));$('#offline-ready').textContent=ready.every(Boolean)?'Offline ready':'Offline update downloading…';
  }catch(e){$('#offline-ready').textContent='Open online to enable offline';}updateClassroomStatus();
 }
 /* Classroom controls and local notebook library. */

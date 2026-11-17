@@ -3,6 +3,7 @@
   const defaults=Object.freeze({style:'ballpoint',pressure:true,sensitivity:1,smoothing:.35});
   const STYLES=new Set(['ballpoint','fountain','pencil','calligraphy']),MAX_POINTS=50000;
   const live=new WeakMap();
+  let opacityLayer=null,opacityContext=null;
   const finite=(v,fallback)=>typeof v==='number'&&Number.isFinite(v)?v:fallback;
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   function normalizeSettings(input={}){return{style:STYLES.has(input.style)?input.style:defaults.style,pressure:input.pressure!==false,sensitivity:clamp(finite(input.sensitivity,1),.25,3),smoothing:clamp(finite(input.smoothing,.35),0,.9)};}
@@ -94,8 +95,40 @@
     }
     return{x:xmin,y:ymin,w:xmax-xmin,h:ymax-ymin};
   }
+  function drawWithOpacity(ctx,stroke,opacity){
+    const width=ctx.canvas?.width,height=ctx.canvas?.height;
+    if(!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0||typeof ctx.drawImage!=='function')return false;
+    try{
+      if(!opacityLayer){
+        opacityLayer=typeof root.OffscreenCanvas==='function'?new root.OffscreenCanvas(width,height):(ctx.canvas.ownerDocument||root.document)?.createElement('canvas');
+        if(!opacityLayer)return false;
+        opacityContext=opacityLayer.getContext('2d');
+        if(!opacityContext){opacityLayer=null;return false;}
+      }
+      if(opacityLayer===ctx.canvas)return false;
+      if(opacityLayer.width!==width)opacityLayer.width=width;
+      if(opacityLayer.height!==height)opacityLayer.height=height;
+    }catch(_){opacityLayer=null;opacityContext=null;return false;}
+    const transform=typeof ctx.getTransform==='function'?ctx.getTransform():null;
+    opacityContext.save();try{
+      if(opacityContext.resetTransform)opacityContext.resetTransform();else opacityContext.setTransform?.(1,0,0,1,0,0);
+      opacityContext.clearRect(0,0,width,height);
+      opacityContext.globalAlpha=1;opacityContext.globalCompositeOperation='source-over';
+      if(transform)opacityContext.setTransform?.(transform.a,transform.b,transform.c,transform.d,transform.e,transform.f);
+      // Paint overlapping caps at full opacity, then apply the user's opacity
+      // once to the complete stroke rather than once to every small segment.
+      draw(opacityContext,{...stroke,opacity:1});
+    }finally{opacityContext.restore();}
+    ctx.save();try{
+      if(transform){if(ctx.resetTransform)ctx.resetTransform();else ctx.setTransform?.(1,0,0,1,0,0);}
+      ctx.globalAlpha=opacity;ctx.drawImage(opacityLayer,0,0);
+    }finally{ctx.restore();}
+    return true;
+  }
   function draw(ctx,stroke){
     if(!stroke||!Array.isArray(stroke.points)||!stroke.points.length)return;
+    const opacity=clamp(finite(stroke.opacity,1),.1,1);
+    if(Object.hasOwn(stroke,'penStyle')&&opacity<1&&drawWithOpacity(ctx,stroke,opacity))return;
     ctx.save();try{
       if(!Object.hasOwn(stroke,'penStyle')){legacyDraw(ctx,stroke);return;}
       const ps=stroke.points;ctx.strokeStyle=stroke.tool==='eraser'?'#fff':stroke.color;ctx.fillStyle=ctx.strokeStyle;ctx.lineCap='round';ctx.lineJoin='round';
