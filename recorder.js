@@ -46,6 +46,18 @@
     return metadata;
   }
 
+  function recordingMetadata(options) {
+    const source = options?.metadata && typeof options.metadata === 'object' ? options.metadata : options;
+    const metadata = {};
+    for (const field of ['name', 'lessonTitle', 'notebookName', 'notebookId', 'classLevel']) {
+      const value = source?.[field];
+      if (value === undefined || value === null) continue;
+      const text = String(value).trim();
+      if (text) metadata[field] = field === 'name' ? text.slice(0, 200) : text;
+    }
+    return Object.freeze(metadata);
+  }
+
   function friendlyError(error, microphone) {
     if (error && error.name === 'NotAllowedError') return new Error(microphone
       ? 'Microphone permission was not granted. Allow it in browser settings, or turn microphone off to record only the board.'
@@ -77,11 +89,42 @@
       this._stopResolve = null;
       this._stopReject = null;
       this._lastBlob = null;
+      this._metadata = Object.freeze({});
     }
 
-    static async list() {
+    static async list({ query = '', classLevel = '' } = {}) {
       const records = await access('readonly', store => store.getAll());
-      return records.map(publicRecord).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const search = String(query ?? '').trim().toLocaleLowerCase();
+      const level = String(classLevel ?? '').trim().toUpperCase();
+      return records.filter(record => {
+        if (level && level !== 'ALL' && String(record.classLevel ?? '').trim().toUpperCase() !== level) return false;
+        return !search || [record.name, record.lessonTitle, record.notebookName, record.classLevel].filter(value => value !== undefined && value !== null).join(' ').toLocaleLowerCase().includes(search);
+      }).map(publicRecord).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+
+    static async rename(id, name) {
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 200) throw new Error('Recording name must contain 1–200 characters.');
+      const db = await database();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE, 'readwrite');
+        const store = transaction.objectStore(STORE);
+        const request = store.get(id);
+        let renamed;
+        let failure;
+        request.onsuccess = () => {
+          if (!request.result) {
+            failure = new Error('This recording is no longer saved on this device.');
+            transaction.abort();
+            return;
+          }
+          const record = { ...request.result, name: name.trim() };
+          renamed = publicRecord(record);
+          store.put(record);
+        };
+        request.onerror = () => { failure = request.error; };
+        transaction.oncomplete = () => resolve(renamed);
+        transaction.onerror = transaction.onabort = () => reject(failure || transaction.error || new Error('Could not rename this recording. Try again.'));
+      });
     }
 
     static async remove(id) {
@@ -116,8 +159,12 @@
       this.stream = this.audioStream = null;
     }
 
-    async start({ microphone = true } = {}) {
+    async start(options = {}) {
       if (this.state !== 'idle') throw new Error('A recording is already active. Stop it before starting another.');
+      const { microphone = true } = options;
+      // Capture the lesson before waiting for microphone permission. Switching
+      // pages or changing the caller's object must not relabel an active video.
+      this._metadata = recordingMetadata(options);
       this.state = 'starting';
       this._elapsed = 0;
       this._activeSince = 0;
@@ -238,8 +285,9 @@
         this._lastBlob = blob;
         const now = new Date();
         const record = {
+          ...this._metadata,
           id: global.crypto?.randomUUID?.() || `rec-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          name: `Math lesson · ${now.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
+          name: this._metadata.name || `Math lesson · ${now.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
           createdAt: now.toISOString(), size: blob.size, type, duration, blob
         };
         let saved = true;

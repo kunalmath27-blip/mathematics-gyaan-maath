@@ -69,7 +69,7 @@
       image.src = url;
       await image.decode();
       if (!image.naturalWidth || !image.naturalHeight) throw new Error('This image is empty or unsupported.');
-      const scale = Math.min(1, 1400 / image.naturalWidth, 1800 / image.naturalHeight);
+      const scale = Math.min(1, Math.sqrt(2000000 / (image.naturalWidth * image.naturalHeight)), 1400 / image.naturalWidth, 1800 / image.naturalHeight);
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
       canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -129,6 +129,7 @@
 
     cleanupPreview() {
       this.previewVersion = (this.previewVersion || 0) + 1;
+      if (this.ocrController) { this.ocrController.abort(); this.ocrController = null; }
       if (this.pdf) {
         try { Promise.resolve(this.pdf.destroy()).catch(() => {}); } catch (_) {}
         this.pdf = null;
@@ -152,7 +153,7 @@
     }
 
     async list() {
-      const body = this.show('Your questions. Your teaching style.', '<p class="modal-intro">Bring your own textbook questions, photos, PDFs and PYQs onto the teaching board. Files save in this browser on this device.</p><div class="modal-actions"><button class="button primary" id="qb-add">＋ Add my question</button></div><div class="qb-filters input-row"><label class="field">Search<input id="qb-search" type="search" placeholder="Question, chapter, exam or year…" value="' + esc(this.filter.search) + '"></label><label class="field">Class<select id="qb-level"><option value="all">All classes</option>' + LEVELS.map(level => '<option value="' + level + '" ' + (this.filter.classLevel === level ? 'selected' : '') + '>' + (level === 'JEE' ? 'IIT JEE' : 'Class ' + level) + '</option>').join('') + '</select></label><label class="field">Source<select id="qb-source"><option value="all">All questions</option><option value="My question" ' + (this.filter.source === 'My question' ? 'selected' : '') + '>My questions</option><option value="PYQ" ' + (this.filter.source === 'PYQ' ? 'selected' : '') + '>PYQ</option></select></label></div><div id="qb-list" class="empty-state">Loading your questions…</div><div class="notice">For graphs, type the equation from a photo or scanned page. This app does not perform handwriting recognition or OCR. Download your original files separately to keep a backup.</div>');
+      const body = this.show('Your questions. Your teaching style.', '<p class="modal-intro">Bring your own textbook questions, photos, PDFs and PYQs onto the teaching board. Files save in this browser on this device.</p><div class="modal-actions"><button class="button primary" id="qb-add">＋ Add my question</button></div><div class="qb-filters input-row"><label class="field">Search<input id="qb-search" type="search" placeholder="Question, chapter, exam or year…" value="' + esc(this.filter.search) + '"></label><label class="field">Class<select id="qb-level"><option value="all">All classes</option>' + LEVELS.map(level => '<option value="' + level + '" ' + (this.filter.classLevel === level ? 'selected' : '') + '>' + (level === 'JEE' ? 'IIT JEE' : 'Class ' + level) + '</option>').join('') + '</select></label><label class="field">Source<select id="qb-source"><option value="all">All questions</option><option value="My question" ' + (this.filter.source === 'My question' ? 'selected' : '') + '>My questions</option><option value="PYQ" ' + (this.filter.source === 'PYQ' ? 'selected' : '') + '>PYQ</option></select></label></div><div id="qb-list" class="empty-state">Loading your questions…</div><div class="notice">For graphs, type the equation from a photo or scanned page. Optional printed-text reading is available inside an attached question. Check all maths notation manually; handwriting is not supported. Download your original files separately to keep a backup.</div>');
       const view = this.view;
       const $ = selector => body.querySelector(selector);
       $('#qb-add').onclick = () => this.form();
@@ -224,16 +225,63 @@
       let lastAutoText = '';
       let busy = false;
       let rangeTouched = Boolean(question.pageRange);
-      const body = this.show(existing ? 'Your question, ready to teach.' : 'Add a question of your own.', '<p class="modal-intro">Type a question, upload a photo, or select a page from a PDF. Save it for later or put it straight onto your board.</p><button class="button quiet" id="qb-back">← Back to question bank</button><div class="input-row"><label class="field">Question title<input id="qb-title" maxlength="200" placeholder="e.g. JEE 2024 — definite integral" value="' + esc(question.title) + '"></label><label class="field">Class<select id="qb-form-level">' + LEVELS.map(level => '<option value="' + level + '" ' + (question.classLevel === level ? 'selected' : '') + '>' + (level === 'JEE' ? 'IIT JEE' : 'Class ' + level) + '</option>').join('') + '</select></label></div><div class="input-row"><label class="field">Chapter<input id="qb-chapter" maxlength="160" placeholder="e.g. Integrals" value="' + esc(question.chapter) + '"></label><label class="field">Source<select id="qb-form-source"><option value="My question" ' + (question.sourceLabel !== 'PYQ' ? 'selected' : '') + '>My question</option><option value="PYQ" ' + (question.sourceLabel === 'PYQ' ? 'selected' : '') + '>PYQ · Previous year question</option></select></label></div><div class="input-row"><label class="field">Exam / book (optional)<input id="qb-exam" maxlength="160" placeholder="e.g. JEE Main, CBSE, my worksheet" value="' + esc(question.exam) + '"></label><label class="field">Year (optional)<input id="qb-year" inputmode="numeric" maxlength="8" placeholder="e.g. 2024" value="' + esc(question.year) + '"></label></div><label class="field">Question text / equation<textarea id="qb-text" rows="5" placeholder="Type your question or equation here. For a graph, include y = x^2 or a clear equation.">' + esc(question.text) + '</textarea></label><label class="field">Attach PDF or photo (up to 40 MB)<input id="qb-file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.png,.jpg,.jpeg,.webp,.gif"></label><div class="qb-attachment-meta" id="qb-attachment"></div><div class="qb-preview-panel" id="qb-preview-panel" hidden><div class="modal-actions" id="qb-pdf-controls" hidden><button class="button outline" id="qb-prev" aria-label="Previous PDF page">‹ Previous</button><label class="field qb-page-field">Page<input id="qb-page" type="number" min="1" value="1" aria-label="PDF page number"></label><span id="qb-page-total"></span><button class="button outline" id="qb-next" aria-label="Next PDF page">Next ›</button></div><p id="qb-preview-status" class="qb-meta" role="status"></p><img id="qb-preview" alt="Selected question attachment preview" hidden style="max-width:100%;height:auto;border-radius:12px;background:white"><div id="qb-extracted" hidden><p class="qb-meta" id="qb-extracted-info"></p><button class="button quiet" id="qb-use-text">Use this page’s extracted text</button></div><section id="qb-range-controls" hidden style="margin-top:18px;padding-top:12px;border-top:1px solid #e2e8db"><strong style="font-size:13px">Teach from several PDF pages</strong><label class="field">Pages to add to the board<input id="qb-page-range" type="text" maxlength="120" inputmode="text" placeholder="e.g. 1-3,5" value="' + esc(question.pageRange || selectedPage) + '" aria-describedby="qb-range-help"></label><p id="qb-range-help" class="qb-meta">Use 1-3 or 1,3,5. Up to 10 pages per import, placed on separate board pages in page order. Your original PDF is kept.</p><div class="modal-actions"><button class="button outline" id="qb-import-range">Add these PDF pages</button><button class="button quiet" id="qb-stop-range" hidden>Stop import</button></div><p id="qb-range-status" class="qb-meta" role="status" aria-live="polite"></p></section></div><div id="qb-error" class="error-text" role="alert"></div><div class="modal-actions"><button class="button primary" id="qb-save">' + (existing ? 'Save changes' : 'Save question') + '</button><button class="button outline" id="qb-board">Put on board</button><button class="button quiet" id="qb-graph">Graph typed equation</button>' + (existing ? '<button class="button quiet" id="qb-delete">Delete question</button>' : '') + '</div><div class="notice">PDF text is editable when the file contains selectable text. Photos, handwriting and scanned pages need a typed equation for graphing. Attachments stay on this device; they are not uploaded or searched online.</div>');
+      let ocrReady = false, ocrAvailable = true;
+      const body = this.show(existing ? 'Your question, ready to teach.' : 'Add a question of your own.', '<p class="modal-intro">Type a question, upload a photo, or select a page from a PDF. Save it for later or put it straight onto your board.</p><button class="button quiet" id="qb-back">← Back to question bank</button><div class="input-row"><label class="field">Question title<input id="qb-title" maxlength="200" placeholder="e.g. JEE 2024 — definite integral" value="' + esc(question.title) + '"></label><label class="field">Class<select id="qb-form-level">' + LEVELS.map(level => '<option value="' + level + '" ' + (question.classLevel === level ? 'selected' : '') + '>' + (level === 'JEE' ? 'IIT JEE' : 'Class ' + level) + '</option>').join('') + '</select></label></div><div class="input-row"><label class="field">Chapter<input id="qb-chapter" maxlength="160" placeholder="e.g. Integrals" value="' + esc(question.chapter) + '"></label><label class="field">Source<select id="qb-form-source"><option value="My question" ' + (question.sourceLabel !== 'PYQ' ? 'selected' : '') + '>My question</option><option value="PYQ" ' + (question.sourceLabel === 'PYQ' ? 'selected' : '') + '>PYQ · Previous year question</option></select></label></div><div class="input-row"><label class="field">Exam / book (optional)<input id="qb-exam" maxlength="160" placeholder="e.g. JEE Main, CBSE, my worksheet" value="' + esc(question.exam) + '"></label><label class="field">Year (optional)<input id="qb-year" inputmode="numeric" maxlength="8" placeholder="e.g. 2024" value="' + esc(question.year) + '"></label></div><label class="field">Question text / equation<textarea id="qb-text" rows="5" placeholder="Type your question or equation here. For a graph, include y = x^2 or a clear equation.">' + esc(question.text) + '</textarea></label><label class="field">Attach PDF or photo (up to 40 MB)<input id="qb-file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.png,.jpg,.jpeg,.webp,.gif"></label><div class="qb-attachment-meta" id="qb-attachment"></div><div class="qb-preview-panel" id="qb-preview-panel" hidden><div class="modal-actions" id="qb-pdf-controls" hidden><button class="button outline" id="qb-prev" aria-label="Previous PDF page">‹ Previous</button><label class="field qb-page-field">Page<input id="qb-page" type="number" min="1" value="1" aria-label="PDF page number"></label><span id="qb-page-total"></span><button class="button outline" id="qb-next" aria-label="Next PDF page">Next ›</button></div><p id="qb-preview-status" class="qb-meta" role="status"></p><img id="qb-preview" alt="Selected question attachment preview" hidden style="max-width:100%;height:auto;border-radius:12px;background:white"><div id="qb-extracted" hidden><p class="qb-meta" id="qb-extracted-info"></p><button class="button quiet" id="qb-use-text">Use this page’s extracted text</button></div><section id="qb-ocr-tools" hidden style="margin-top:18px;padding-top:12px;border-top:1px solid #e2e8db"><strong>Read printed text from this photo or PDF page</strong><p class="qb-meta">Optional, on this device. English and Hindi printed text only; handwriting and maths notation are unreliable. Correct powers/superscripts, signs, fractions and integral symbols before using the result. Images are not sent to a server for OCR.</p><div class="input-row"><label class="field">Printed language<select id="qb-ocr-language"><option value="eng">English</option><option value="eng+hin">English + Hindi</option></select></label></div><div class="modal-actions"><button class="button outline" id="qb-ocr-enable">Enable text reader · ~12 MB</button><button class="button outline" id="qb-ocr-read" disabled>Read printed text</button><button class="button quiet" id="qb-ocr-cancel" hidden>Cancel text reading</button></div><p id="qb-ocr-status" class="qb-meta" role="status" aria-live="polite">Checking optional reader…</p><progress id="qb-ocr-progress" max="1" value="0" hidden style="width:100%"></progress><label class="field">Editable reading draft<textarea id="qb-ocr-text" rows="5" placeholder="Read printed text, then correct it here. Your question text stays unchanged until Apply."></textarea></label><label class="compare-label"><input id="qb-ocr-reviewed" type="checkbox"> I checked the text, numbers and maths symbols.</label><div class="modal-actions"><button class="button outline" id="qb-ocr-apply" disabled>Apply reviewed text to question</button><button class="button quiet" id="qb-ocr-graph" disabled>Graph reviewed equation</button></div><p class="qb-meta">Reading keeps your existing question draft and original attachment. Apply changes the question text; Save question stores it on this device.</p></section><section id="qb-range-controls" hidden style="margin-top:18px;padding-top:12px;border-top:1px solid #e2e8db"><strong style="font-size:13px">Teach from several PDF pages</strong><label class="field">Pages to add to the board<input id="qb-page-range" type="text" maxlength="120" inputmode="text" placeholder="e.g. 1-3,5" value="' + esc(question.pageRange || selectedPage) + '" aria-describedby="qb-range-help"></label><p id="qb-range-help" class="qb-meta">Use 1-3 or 1,3,5. Up to 10 pages per import, placed on separate board pages in page order. Your original PDF is kept.</p><div class="modal-actions"><button class="button outline" id="qb-import-range">Add these PDF pages</button><button class="button quiet" id="qb-stop-range" hidden>Stop import</button></div><p id="qb-range-status" class="qb-meta" role="status" aria-live="polite"></p></section></div><div id="qb-error" class="error-text" role="alert"></div><div class="modal-actions"><button class="button primary" id="qb-save">' + (existing ? 'Save changes' : 'Save question') + '</button><button class="button outline" id="qb-board">Put on board</button><button class="button quiet" id="qb-graph">Graph typed equation</button>' + (existing ? '<button class="button quiet" id="qb-delete">Delete question</button>' : '') + '</div><div class="notice">PDF text is editable when the file contains selectable text. The optional text reader can draft printed text from a photo or scan. Review and correct equations for graphing; handwriting is not supported. Attachments stay on this device; they are not uploaded or searched online.</div>');
       const $ = selector => body.querySelector(selector);
       const view = this.view;
       const live = () => !this.disposed && view === this.view && body.isConnected && Boolean($('#qb-text'));
       const error = message => { if (live()) $('#qb-error').textContent = message || ''; };
+      const ocrActions = () => {
+        if (!live() || !global.StudioOCR) return;
+        const reviewed = $('#qb-ocr-reviewed').checked && $('#qb-ocr-text').value.trim();
+        $('#qb-ocr-read').disabled = busy || !previewData || !ocrReady;
+        $('#qb-ocr-enable').disabled = busy || !ocrAvailable;
+        $('#qb-ocr-enable').hidden = ocrReady;
+        $('#qb-ocr-language').disabled = busy;
+        $('#qb-ocr-text').disabled = busy;
+        $('#qb-ocr-reviewed').disabled = busy;
+        $('#qb-ocr-apply').disabled = busy || !reviewed;
+        $('#qb-ocr-graph').disabled = busy || !reviewed || typeof this.config.onGraph !== 'function';
+      };
+      const refreshOCR = async () => {
+        if (!global.StudioOCR) return;
+        const state = await global.StudioOCR.status(); if (!live()) return;
+        ocrReady = Boolean(state.ready); ocrAvailable = Boolean(state.available);
+        $('#qb-ocr-status').textContent = ocrReady ? 'Printed-text reader saved for offline use. Read this page, then edit and review the draft.' : !ocrAvailable ? 'Optional reader storage is unavailable. Try current Chrome over HTTPS.' : 'Enable once to save about 12 MB for offline use.' + (state.downloadedBytes ? ' Enable resumes the saved download.' : '');
+        ocrActions();
+      };
+      const runOCR = async enable => {
+        if (busy || !global.StudioOCR || !previewData && !enable) return;
+        const controller = this.ocrController = new AbortController();
+        buttonsBusy(true); error(''); $('#qb-ocr-cancel').hidden = false; $('#qb-ocr-progress').hidden = false; $('#qb-ocr-progress').value = 0;
+        const onProgress = message => {
+          if (!live() || this.ocrController !== controller) return;
+          $('#qb-ocr-status').textContent = message.status || 'Reading printed text…';
+          $('#qb-ocr-progress').value = Math.max(0, Math.min(1, Number(message.progress) || 0));
+        };
+        try {
+          if (enable) {
+            await global.StudioOCR.setup({ signal: controller.signal, onProgress });
+            if (live() && !controller.signal.aborted) await refreshOCR();
+          } else {
+            const result = await global.StudioOCR.recognize(previewData, $('#qb-ocr-language').value, { signal: controller.signal, onProgress });
+            if (!live() || controller.signal.aborted) return;
+            $('#qb-ocr-text').value = result.text || ''; $('#qb-ocr-reviewed').checked = false;
+            $('#qb-ocr-status').textContent = result.text.trim() ? 'Reading draft ready. Correct the text and maths symbols, then tick the review box.' : 'No printed text found. Try a clearer photo, or type the equation. Your question draft is kept.';
+          }
+        } catch (failure) {
+          if (live()) error(failure.name === 'AbortError' ? 'Text reading cancelled. Your question and previous reading draft are kept.' : failure.message || 'Printed text could not be read. Your question draft is kept.');
+        } finally {
+          if (this.ocrController === controller) this.ocrController = null;
+          if (live()) { $('#qb-ocr-cancel').hidden = true; $('#qb-ocr-progress').hidden = true; buttonsBusy(false); if (enable) await refreshOCR(); }
+        }
+      };
       const buttonsBusy = value => {
         busy = value;
         ['#qb-save', '#qb-board', '#qb-file', '#qb-page', '#qb-graph', '#qb-back', '#qb-remove-file', '#qb-page-range', '#qb-import-range'].forEach(id => { if ($(id)) $(id).disabled = value; });
         if ($('#qb-prev')) $('#qb-prev').disabled = value || selectedPage <= 1;
         if ($('#qb-next')) $('#qb-next').disabled = value || !this.pdf || selectedPage >= this.pdf.numPages;
+        ocrActions();
       };
       const attachmentMeta = () => {
         $('#qb-attachment').innerHTML = attachment ? '<span>' + esc(attachment.name) + ' · ' + (attachment.size / 1048576).toFixed(1) + ' MB</span><div class="modal-actions"><button class="button quiet" id="qb-download-original">Download original</button><button class="button quiet" id="qb-remove-file">Remove attachment</button></div>' : '<small>Optional: JPG, PNG, WebP, GIF or PDF. One attachment per saved question.</small>';
@@ -255,6 +303,7 @@
         $('#qb-pdf-controls').hidden = !isPDF(attachment);
         $('#qb-range-controls').hidden = !isPDF(attachment);
         $('#qb-range-status').textContent = '';
+        $('#qb-ocr-reviewed').checked = false;
         try {
           if (isPDF(attachment)) {
             if (!global.StudioPDF) throw new Error('The PDF tool is unavailable. Open the app online once to complete setup.');
@@ -267,13 +316,13 @@
             selectedPage = Math.max(1, Math.min(pdf.numPages, selectedPage));
             $('#qb-page').value = selectedPage; $('#qb-page').max = pdf.numPages;
             $('#qb-page-total').textContent = 'of ' + pdf.numPages;
-            if (!rangeTouched) $('#qb-page-range').value = selectedPage;
+            if (!rangeTouched) $('#qb-page-range').value = String(selectedPage);
             $('#qb-prev').disabled = selectedPage <= 1; $('#qb-next').disabled = selectedPage >= pdf.numPages;
             const rendered = await pdf.render(selectedPage, { maxWidth: 1400 });
             if (!valid()) return;
             previewData = rendered.dataUrl; extracted = rendered.text || '';
             $('#qb-extracted').hidden = false;
-            $('#qb-extracted-info').textContent = extracted.trim() ? 'Text was extracted from this page. Check the equation and symbols before using it.' : 'No selectable text was found. This may be a scanned page. Type the equation yourself to use graphing.';
+            $('#qb-extracted-info').textContent = extracted.trim() ? 'Text was extracted from this page. Check the equation and symbols before using it.' : 'No selectable text was found. This may be a scanned page. Read its printed text below, or type the equation for graphing.';
             $('#qb-use-text').hidden = !extracted.trim();
             if (extracted.trim() && (!$('#qb-text').value.trim() || $('#qb-text').value === lastAutoText)) { $('#qb-text').value = extracted; lastAutoText = extracted; }
             $('#qb-preview-status').textContent = 'PDF page ' + selectedPage + ' · this page will be placed on the board.';
@@ -294,6 +343,24 @@
         const classLevel = $('#qb-form-level').value;
         return { id: existing?.id || global.crypto?.randomUUID?.() || 'q-' + Date.now() + '-' + Math.random().toString(36).slice(2), title: title || 'My question', text, classLevel, level: classLevel, chapter: $('#qb-chapter').value.trim(), sourceLabel: $('#qb-form-source').value, exam: $('#qb-exam').value.trim(), year: $('#qb-year').value.trim(), attachment, selectedPage, pageRange: isPDF(attachment) ? $('#qb-page-range').value.trim() : undefined, createdAt: existing?.createdAt || now, updatedAt: now };
       };
+      $('#qb-ocr-tools').hidden = !global.StudioOCR;
+      $('#qb-ocr-enable').onclick = () => runOCR(true);
+      $('#qb-ocr-read').onclick = () => runOCR(false);
+      $('#qb-ocr-cancel').onclick = () => { this.ocrController && this.ocrController.abort(); };
+      $('#qb-ocr-text').oninput = () => { $('#qb-ocr-reviewed').checked = false; ocrActions(); };
+      $('#qb-ocr-reviewed').onchange = () => ocrActions();
+      const reviewedOCR = () => {
+        const text = $('#qb-ocr-text').value.trim();
+        if (busy || !text || !$('#qb-ocr-reviewed').checked) { error('Correct the reading draft and tick the review box first.'); return null; }
+        return text;
+      };
+      $('#qb-ocr-apply').onclick = () => {
+        const text = reviewedOCR(); if (!text) return;
+        $('#qb-text').value = text; lastAutoText = ''; error('');
+        this.config.toast('Reviewed text applied. Your original attachment is kept; save the question to store changes.');
+      };
+      $('#qb-ocr-graph').onclick = () => { const text = reviewedOCR(); if (text) this.sendGraph(text); };
+      refreshOCR();
       $('#qb-back').onclick = () => this.list();
       $('#qb-file').onchange = async event => {
         const file = event.target.files?.[0];

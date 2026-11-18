@@ -1,37 +1,51 @@
 # Mathematics Gyaan Maath
 
-Maths teaching workspace for Class 9–12 and IIT JEE, built for Chrome and S Pen.
+Maths teaching workspace for Class 9–12 and IIT JEE, designed for Chrome and S Pen.
 
-Open: https://kunalmath27-blip.github.io/mathematics-gyaan-maath/
+Website: https://kunalmath27-blip.github.io/mathematics-gyaan-maath/
 
-## Class shuru karein
+## Start a class
 
-1. Open the website; the teaching board is the main screen.
-2. Choose **Naya page** or **Question / PDF**. Write with your S Pen.
-3. Use **Mota / patla**, **Dark / light**, colours, highlighter and eraser above the board. **Fast pen** selects opaque ballpoint with low smoothing.
-4. Open graphs, circle/sector, diagrams, objects/lock, or **Sabhi tools** from the board.
-5. For video, enable Mic, start recording, then stop, preview and download.
+1. Choose **Naya page** or **Question / PDF** and write with your S Pen.
+2. **Fast pen**, **Mota / patla**, **Dark / light**, colours, erasers and undo are above the board. **Fit width** enlarges a writing page; **Full page** shows everything.
+3. **Sabhi tools** opens graphs, geometry, formulas, OCR, backup and recording management.
+4. For a replay, choose Mic, start recording, then stop, preview and download. Videos save with the notebook/lesson name; recordings can be searched, filtered and renamed.
 
-## Tools
+## Teaching tools
 
-- Pressure-aware pens, smoothing, favourite pens, thickness and opacity; S Pen only by default.
-- Incremental live ink, two-finger zoom/pan, laser and spotlight.
-- Lasso, cross-page copy/paste, image crop, object locking and front/back layers.
-- Local notebooks, folders, typed-text search, page organiser and recoverable removed pages/notebooks.
-- Bold/italic/underline text, alignment, size, colour and maths symbols.
-- PDF/photo/PYQ question bank; single page or PDF ranges such as `1-3,5` (up to 10 pages per import).
-- Safe equation graphs with variables, editable circles/sectors, calculator, ruler/protractor and timer.
-- Board + microphone recording, pause/resume, saved videos and downloads.
-- PNG, print/save PDF, current-notebook and all-notebooks JSON backups.
+- Pressure-aware pens and smoothing, favourites, thickness and darkness; S Pen only blocks finger/palm ink by default.
+- Incremental live ink, two-finger zoom/pan, lasso, cross-page copy/paste, image crop, object lock and layers.
+- Local notebooks/folders, typed-text search, page organizer, removed-page/notebook restore and styled text/maths symbols.
+- Own PDF/photo/PYQ question bank; original files remain local. Import PDF ranges such as `1-3,5`, up to ten pages at once.
+- Safe equation graphs with variables and reference comparison; circles/sectors with independent copies.
+- **JEE conic lab**: ellipse, hyperbola and signed/rotated-axis parabolas, with live parameters, foci, directrices and asymptotes. Standard axis-aligned forms, not an arbitrary implicit-equation solver.
+- **Formula library**: 67 common reference formulas with conditions and examples, searchable by class/topic and insertable as editable teaching pages. The chapter index and ten worked examples are not a complete textbook, current verified syllabus or PYQ collection.
+- Calculator, ruler/protractor, paper styles, timer, laser and spotlight.
+
+## Printed photo / scan text
+
+**Photo / scan se text** is optional, local Tesseract OCR for printed English or English + Hindi. Enable it once online to cache about 12.5 MB of pinned engine/model files. Images are processed on the device; they are not sent to an AI server or ChatGPT. Editable output must be reviewed before Apply/Graph. Handwriting, fractions, superscripts and complex mathematical layouts may be wrong and need correction.
+
+Selectable PDF text is extracted directly by PDF.js without installing OCR. Scanned PDF pages can use the optional reader. Process one bounded image/page at a time; recognition speed and memory depend on the tablet.
+
+## Backup and sharing
+
+**Teaching backup** creates a `.mgm` file containing notebooks/folders and original question PDFs/photos. Saved videos are optional. The file can be downloaded or shared through supported Android Chrome's share sheet (for example, saved to Drive). This is manual file backup, not automatic cloud synchronization.
+
+Restore validates the archive first and creates additional copies, preserving existing work. The archive limit is 512 MB; large recordings can be downloaded separately. JSON notebook backups, PNG export and print/save PDF remain available.
+
+All data stays in this browser/device. Clearing site data removes local notes, uploads, OCR cache and recordings. Keep backup files and video downloads. To move from another website origin, export there and restore here.
 
 ## Offline and online teaching
 
-Open online once in the same browser and wait for **Offline ready**. Local board tools, graphs, PDF tools, notes and supported recording work offline after assets have cached. Online lessons use Meet/Zoom or another meeting app's screen sharing; there is no built-in meeting server. Recording captures the board and your microphone, not remote participants or camera video.
+Open online once in the same browser and wait for **Offline ready**. Local board tools, PDF tools, graphs, formula references, notes and supported recording then work offline. Optional OCR has its own Enable/download step and persistent cache.
 
-Notes, videos and uploads stay in this browser/device. Notebook backups exclude recordings and the original My Questions attachments; keep separate downloads. Export from an old website origin and restore on this origin to move notes. Clearing browser site data removes local work.
+For live students, use Meet/Zoom or another meeting app's screen sharing. There is no built-in meeting server. Recording captures this board and your microphone, not remote participants/camera video.
 
-This is an installable web app, not the native Samsung Notes app. Bluetooth Air actions, Samsung Cloud sync and handwriting OCR are not provided. Pressure/tilt/side-button data depends on the device/browser. The library includes 10 worked examples and a chapter index; it is not a complete textbook or verified exam syllabus.
+This is an installable web app. Native Samsung Cloud synchronization, Bluetooth Air Actions and Samsung Notes' handwriting recognition are not provided. Hardware pressure, tilt and button data depend on the device/browser; physical Samsung tablet testing is still necessary.
 
-## Hosting
+## Hosting and licenses
 
-The static files are at the repository root. GitHub Pages publishes `main` → `/(root)`. Keep `.nojekyll`, PDF.js worker/fonts and vendor licenses. No build, credentials or account are needed to use the app.
+Static files publish from `main` → `/(root)` on GitHub Pages. Keep `.nojekyll`, local PDF.js/OCR assets and their license files. No build or account is needed to use the app. Heavy `vendor/ocr` files are cached only after explicit Enable; the normal offline app does not download them automatically.
+
+Large OCR cores/models are published as bounded binary pieces under `vendor/ocr/parts/`. The text-reader setup verifies and assembles byte-identical original files into its optional browser cache before use. Those logical core/model URLs are served by the controlling service worker; they need not exist as large physical hosting files. Keep all pieces and `PACKAGE-METADATA.json`.

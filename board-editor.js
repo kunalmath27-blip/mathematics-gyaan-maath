@@ -5,7 +5,7 @@
   const transformCopy = object => object.type === 'stroke' ? { ...object, points: object.points.map(p => ({ ...p })) } : { ...object };
   const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-  const BOX_TYPES = new Set(['image', 'graph', 'livegraph', 'diagram', 'geometry', 'instrument']);
+  const BOX_TYPES = new Set(['image', 'graph', 'livegraph', 'diagram', 'geometry', 'instrument', 'conic']);
   const SHAPE_TYPES = new Set(['line', 'rectangle', 'circle']);
 
   class BoardEditor {
@@ -195,7 +195,7 @@
     }
     _resized(object, bounds, dx, dy) {
       const out = transformCopy(object);
-      const min = (object.type === 'graph' || object.type === 'livegraph') ? 100 : 25;
+      const min = (['graph', 'livegraph', 'conic'].includes(object.type)) ? 100 : 25;
       const maxW = Math.max(min, (this.canvas.width || 1600) - bounds.x);
       const maxH = Math.max(min, (this.canvas.height || 1000) - bounds.y);
       const sx = clamp(bounds.w + dx, min, maxW) / bounds.w;
