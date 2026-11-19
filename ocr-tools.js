@@ -313,8 +313,9 @@
       this.body = document.querySelector('#modal-body');
       this.$ = selector => this.body.querySelector(selector);
       this.dialog = this.body.closest('dialog');
-      this.closeHandler = () => this.dispose();
-      this.dialog && this.dialog.addEventListener('close', this.closeHandler, { once: true });
+      // dialog.close() queues its event; another tool may already have reopened it.
+      this.closeHandler = () => { if (!this.dialog.open) this.dispose(); };
+      this.dialog && this.dialog.addEventListener('close', this.closeHandler);
       if (global.MutationObserver) { this.observer = new MutationObserver(() => { if (!this.body.querySelector('#studio-ocr')) this.dispose(); }); this.observer.observe(this.body, { childList: true }); }
       this.bind(); this.refreshStatus();
     }

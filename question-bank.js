@@ -114,9 +114,11 @@
       this.disposed = false;
       this.batch = null;
       this.filter = { search: '', classLevel: 'all', source: 'all' };
-      this.closeHandler = () => this.dispose();
       const body = document.querySelector('#modal-body');
-      body?.closest('dialog')?.addEventListener('close', this.closeHandler, { once: true });
+      this.dialog = body?.closest('dialog');
+      // A previous tool's queued close event can arrive after this dialog reopens.
+      this.closeHandler = () => { if (!this.dialog?.open) this.dispose(); };
+      this.dialog?.addEventListener('close', this.closeHandler);
       // Other app tools can replace the same open dialog without a close event.
       // Release a PDF worker when the question bank is replaced in that way.
       if (body && global.MutationObserver) {
@@ -137,11 +139,12 @@
     }
 
     dispose() {
+      if (this.disposed) return;
       this.disposed = true;
       if (this.batch) this.batch.cancelled = true;
       this.cleanupPreview();
       this.observer?.disconnect();
-      document.querySelector('#modal-body')?.closest('dialog')?.removeEventListener('close', this.closeHandler);
+      this.dialog?.removeEventListener('close', this.closeHandler);
     }
 
     show(title, html) {
